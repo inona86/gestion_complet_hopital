@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Connexion — INONA HOSPITAL</title>
+<style>
+  :root{
+    --navy:#0c1e3c; --navy-2:#132a52; --blue:#185fa5; --blue-dark:#0c447c;
+    --cream:#f4f3ee; --ink:#1a1917; --muted:#6b6961; --border:rgba(0,0,0,.09);
+    --red-bg:#fcebeb; --red-fg:#791f1f;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:-apple-system,'Segoe UI',sans-serif;
+    min-height:100vh;display:flex;align-items:center;justify-content:center;
+    background:linear-gradient(135deg,var(--navy),var(--navy-2));
+    padding:20px;
+  }
+  .card{
+    background:#fff;border-radius:16px;padding:36px 34px;width:100%;max-width:380px;
+    box-shadow:0 24px 60px rgba(0,0,0,.25);
+  }
+  .logo{display:flex;align-items:center;gap:9px;margin-bottom:6px}
+  .logo .badge{width:26px;height:26px;border-radius:8px;background:var(--blue);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px}
+  .logo span{font-weight:700;font-size:16px;color:var(--navy)}
+  .logo small{color:var(--muted);font-weight:400}
+  h1{font-size:19px;font-weight:700;margin:18px 0 4px}
+  .sub{font-size:13px;color:var(--muted);margin-bottom:22px}
+  label{display:block;font-size:12.5px;font-weight:600;color:var(--ink);margin-bottom:6px}
+  input{
+    width:100%;padding:10px 12px;border:1px solid rgba(0,0,0,.15);border-radius:8px;
+    font-size:14px;font-family:inherit;margin-bottom:16px;background:var(--cream);
+  }
+  input:focus{outline:none;border-color:var(--blue);background:#fff}
+  button{
+    width:100%;padding:11px;background:var(--blue);color:#fff;border:none;border-radius:8px;
+    font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;
+  }
+  button:hover{background:var(--blue-dark)}
+  button:disabled{opacity:.6;cursor:not-allowed}
+  .err{
+    background:var(--red-bg);color:var(--red-fg);font-size:12.5px;padding:9px 12px;
+    border-radius:8px;margin-bottom:14px;display:none;
+  }
+  .back{display:block;text-align:center;margin-top:18px;font-size:12.5px;color:var(--muted);text-decoration:none}
+  .back:hover{color:var(--blue)}
+  .demo{margin-top:20px;padding-top:16px;border-top:1px solid var(--border);font-size:11.5px;color:var(--muted)}
+  .demo b{color:var(--ink)}
+</style>
+</head>
+<body>
+
+<div class="card">
+  <div class="logo"><span class="badge">+</span><span>INONA <small>HOSPITAL</small></span></div>
+  <h1>Connexion</h1>
+  <div class="sub">Accédez à votre espace MediBase selon votre rôle.</div>
+
+  <div class="err" id="err"></div>
+
+  <form id="form">
+    <label for="email">Email</label>
+    <input type="email" id="email" autocomplete="username" required placeholder="vous@inona-hospital.cm">
+
+    <label for="password">Mot de passe</label>
+    <input type="password" id="password" autocomplete="current-password" required placeholder="••••••••">
+
+    <button type="submit" id="submitBtn">Se connecter</button>
+  </form>
+
+  <a class="back" href="index.html">← Retour à la présentation</a>
+
+  <div class="demo">
+    <b>Comptes de démonstration</b> (créés automatiquement au premier démarrage du serveur) :<br>
+    admin@inona-hospital.cm · medecin@inona-hospital.cm · infirmier@inona-hospital.cm · etc. — voir la console du serveur pour les mots de passe.
+  </div>
+</div>
+
+<script>
+const form = document.getElementById('form');
+const err  = document.getElementById('err');
+const btn  = document.getElementById('submitBtn');
+
+// Déjà connecté ? on saute directement dans l'app.
+if (sessionStorage.getItem('medibase_token')) {
+  window.location.href = 'app.html';
+}
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  err.style.display = 'none';
+  btn.disabled = true;
+  btn.textContent = 'Connexion...';
+
+  try {
+    const r = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: document.getElementById('email').value.trim(),
+        password: document.getElementById('password').value
+      })
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'Échec de connexion');
+
+    sessionStorage.setItem('medibase_token', j.token);
+    sessionStorage.setItem('medibase_user', JSON.stringify(j.user));
+    window.location.href = 'app.html';
+  } catch (e2) {
+    err.textContent = e2.message;
+    err.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = 'Se connecter';
+  }
+});
+</script>
+
+</body>
+</html>

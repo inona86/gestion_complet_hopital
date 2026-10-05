@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Utilisateurs — INONA HOSPITAL</title>
+<link rel="stylesheet" href="style.css">
+<script>
+  (function(){ if (localStorage.getItem('medibase_theme') === 'dark') document.documentElement.setAttribute('data-theme','dark'); })();
+</script>
+<style>
+  body{overflow:auto}
+  .users-wrap{max-width:920px;margin:0 auto;padding:28px 20px 60px}
+  .users-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+  .users-head h1{font-size:18px;font-weight:700}
+  .users-head p{font-size:12.5px;color:#6b6961;margin-top:2px}
+  .toggle-btn{padding:4px 10px;border:1px solid rgba(0,0,0,.15);background:none;border-radius:6px;font-size:12px;cursor:pointer;color:#6b6961}
+  .toggle-btn:hover{background:#f0efe9}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-logo" style="cursor:pointer" onclick="window.location.href='app.html'">INONA<span>HOSPITAL</span></div>
+  <a class="topbar-site-link" href="app.html">← Tableau de bord</a>
+  <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()" title="Changer de thème" style="margin-left:auto">🌙</button>
+</div>
+
+<div class="users-wrap">
+  <div class="users-head">
+    <div>
+      <h1>Gestion des comptes</h1>
+      <p>Créer, modifier, activer/désactiver les comptes du personnel.</p>
+    </div>
+    <button class="header-btn" style="margin-left:0" onclick="openAdd()">+ Nouvel utilisateur</button>
+  </div>
+
+  <div class="table-wrap" style="background:#fff;border:1px solid rgba(0,0,0,.09);border-radius:10px;overflow:auto">
+    <table>
+      <thead><tr><th>Nom</th><th>Email</th><th>Rôle</th><th>Statut</th><th>Créé le</th><th>Actions</th></tr></thead>
+      <tbody id="tbody"><tr><td colspan="6" style="text-align:center;padding:30px;color:#9b9890">Chargement...</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="toast-wrap" id="toasts"></div>
+<div id="modal-root"></div>
+
+<script>
+const API = 'http://localhost:3000/api';
+const authToken   = sessionStorage.getItem('medibase_token');
+const currentUser = JSON.parse(sessionStorage.getItem('medibase_user') || 'null');
+if (!authToken || !currentUser) window.location.href = 'login.html';
+if (currentUser && currentUser.role !== 'admin') window.location.href = 'app.html';
+
+const ROLES = ['admin','medecin','infirmier','pharmacien','technicien','secretaire','caissier'];
+const ROLE_LABELS = {
+  admin:'Administrateur', medecin:'Médecin', infirmier:'Infirmier(ère)',
+  pharmacien:'Pharmacien(ne)', technicien:'Technicien(ne)',
+  secretaire:'Secrétariat', caissier:'Facturation'
+};
+
+async function apiFetch(url, opts = {}) {
+  const headers = Object.assign({}, opts.headers, { Authorization: `Bearer ${authToken}` });
+  const r = await fetch(url, Object.assign({}, opts, { headers }));
+  if (r.status === 401) { window.location.href = 'login.html'; throw new Error('Session expirée'); }
+  return r;
+}
+
+function showToast(msg, type='ok') {
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  document.getElementById('toasts').appendChild(el);
+  setTimeout(() => el.remove(), 3500);
+}
+
+let users = [];
+
+async function loadUsers() {
+  try {
+    const r = await apiFetch(`${API}/users`);
+    users = await r.json();
+    render();
+  } catch(e) {
+    document.getElementById('tbody').innerHTML = `<tr><td colspan="6" style="text-align:center;padding:30px;color:#9b9890">Erreur de chargement</td></tr>`;
+  }
+}
+
+function render() {
+  const tbody = document.getElementById('tbody');
+  tbody.innerHTML = users.length ? users.map(u => `
+    <tr>
+      <td>${u.prenom} ${u.nom}</td>
+      <td>${u.email}</td>
+      <td><span class="badge b-blue">${ROLE_LABELS[u.role] || u.role}</span></td>
+      <td><span class="badge ${u.actif ? 'b-green' : 'b-gray'}">${u.actif ? 'Actif' : 'Désactivé'}</span></td>
+      <td style="font-size:12px;color:#6b6961">${new Date(u.cree_le).toLocaleDateString('fr-FR')}</td>
+      <td><div class="act-cell">
+        <button class="btn-edit" onclick='openEdit(${JSON.stringify(u)})'>Modifier</button>
+        <button class="toggle-btn" onclick="toggleActif(${u.id_utilisateur}, ${u.actif ? 0 : 1})">${u.actif ? 'Désactiver' : 'Activer'}</button>
+        ${u.id_utilisateur !== currentUser.id ? `<button class="btn-del" onclick="removeUser(${u.id_utilisateur})">Suppr.</button>` : ''}
+      </div></td>
+    </tr>
+  `).join('') : `<tr><td colspan="6" style="text-align:center;padding:30px;color:#9b9890">Aucun utilisateur</td></tr>`;
+}
+
+function roleOptions(selected) {
+  return ROLES.map(r => `<option value="${r}" ${r===selected?'selected':''}>${ROLE_LABELS[r]}</option>`).join('');
+}
+
+function openAdd() {
+  document.getElementById('modal-root').innerHTML = `
+    <div class="overlay" onclick="if(event.target===this) closeModal()">
+      <div class="modal">
+        <div class="modal-title">Nouvel utilisateur</div>
+        <form id="user-form">
+          <div class="form-row">
+            <div class="form-group"><label class="form-label">Nom</label><input class="form-input" name="nom" required></div>
+            <div class="form-group"><label class="form-label">Prénom</label><input class="form-input" name="prenom" required></div>
+          </div>
+          <div class="form-row full">
+            <div class="form-group"><label class="form-label">Email</label><input class="form-input" type="email" name="email" required></div>
+          </div>
+          <div class="form-row full">
+            <div class="form-group"><label class="form-label">Mot de passe (6 caractères min.)</label><input class="form-input" type="password" name="password" minlength="6" required></div>
+          </div>
+          <div class="form-row full">
+            <div class="form-group"><label class="form-label">Rôle</label>
+              <select class="form-select" name="role" required>${roleOptions('medecin')}</select>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn-cancel" onclick="closeModal()">Annuler</button>
+            <button type="submit" class="btn-save">Créer</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.getElementById('user-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const body = Object.fromEntries(fd.entries());
+    try {
+      const r = await apiFetch(`${API}/users`, {
+        method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || 'Erreur');
+      showToast('Utilisateur créé ✓', 'ok');
+      closeModal();
+      loadUsers();
+    } catch(err) { showToast(err.message, 'err'); }
+  });
+}
+
+function openEdit(u) {
+  document.getElementById('modal-root').innerHTML = `
+    <div class="overlay" onclick="if(event.target===this) closeModal()">
+      <div class="modal">
+        <div class="modal-title">Modifier — ${u.prenom} ${u.nom}</div>
+        <form id="user-form">
+          <div class="form-row">
+            <div class="form-group"><label class="form-label">Nom</label><input class="form-input" name="nom" value="${u.nom}" required></div>
+            <div class="form-group"><label class="form-label">Prénom</label><input class="form-input" name="prenom" value="${u.prenom}" required></div>
+          </div>
+          <div class="form-row full">
+            <div class="form-group"><label class="form-label">Email</label><input class="form-input" type="email" name="email" value="${u.email}" required></div>
+          </div>
+          <div class="form-row full">
+            <div class="form-group"><label class="form-label">Nouveau mot de passe (laisser vide pour ne pas changer)</label><input class="form-input" type="password" name="password" minlength="6"></div>
+          </div>
+          <div class="form-row full">
+            <div class="form-group"><label class="form-label">Rôle</label>
+              <select class="form-select" name="role" required>${roleOptions(u.role)}</select>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn-cancel" onclick="closeModal()">Annuler</button>
+            <button type="submit" class="btn-save">Enregistrer</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.getElementById('user-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const body = Object.fromEntries(fd.entries());
+    if (!body.password) delete body.password;
+    try {
+      const r = await apiFetch(`${API}/users/${u.id_utilisateur}`, {
+        method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || 'Erreur');
+      showToast('Utilisateur mis à jour ✓', 'ok');
+      closeModal();
+      loadUsers();
+    } catch(err) { showToast(err.message, 'err'); }
+  });
+}
+
+async function toggleActif(id, actif) {
+  try {
+    const r = await apiFetch(`${API}/users/${id}`, {
+      method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ actif })
+    });
+    if (!r.ok) throw new Error((await r.json()).error || 'Erreur');
+    showToast(actif ? 'Compte activé ✓' : 'Compte désactivé ✓', 'ok');
+    loadUsers();
+  } catch(e) { showToast(e.message, 'err'); }
+}
+
+async function removeUser(id) {
+  if (!confirm('Supprimer définitivement ce compte ?')) return;
+  try {
+    const r = await apiFetch(`${API}/users/${id}`, { method: 'DELETE' });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'Erreur');
+    showToast('Utilisateur supprimé ✓', 'ok');
+    loadUsers();
+  } catch(e) { showToast(e.message, 'err'); }
+}
+
+function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
+
+function toggleTheme() {
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  if (isDark) { document.documentElement.removeAttribute('data-theme'); localStorage.setItem('medibase_theme','light'); }
+  else { document.documentElement.setAttribute('data-theme','dark'); localStorage.setItem('medibase_theme','dark'); }
+  syncThemeIcon();
+}
+function syncThemeIcon() {
+  const btn = document.getElementById('theme-toggle');
+  if (btn) btn.textContent = document.documentElement.getAttribute('data-theme') === 'dark' ? '☀️' : '🌙';
+}
+syncThemeIcon();
+loadUsers();
+</script>
+
+</body>
+</html>

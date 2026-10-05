@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mon profil — INONA HOSPITAL</title>
+<link rel="stylesheet" href="style.css">
+<script>
+  (function(){ if (localStorage.getItem('medibase_theme') === 'dark') document.documentElement.setAttribute('data-theme','dark'); })();
+</script>
+<style>
+  body{overflow:auto}
+  .profile-wrap{max-width:520px;margin:0 auto;padding:32px 20px 60px}
+  .profile-card{background:#fff;border:1px solid rgba(0,0,0,.09);border-radius:12px;padding:24px;margin-bottom:20px}
+  .profile-card h2{font-size:15px;font-weight:600;margin-bottom:16px}
+  .info-row{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid rgba(0,0,0,.06);font-size:13.5px}
+  .info-row:last-child{border-bottom:none}
+  .info-row span:first-child{color:#6b6961}
+  .info-row span:last-child{font-weight:500}
+  .avatar{width:56px;height:56px;border-radius:50%;background:#185fa5;color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;margin-bottom:14px}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-logo" style="cursor:pointer" onclick="window.location.href='app.html'">INONA<span>HOSPITAL</span></div>
+  <a class="topbar-site-link" href="app.html">← Tableau de bord</a>
+  <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()" title="Changer de thème" style="margin-left:auto">🌙</button>
+</div>
+
+<div class="profile-wrap">
+  <div class="profile-card" id="info-card">
+    <div class="avatar" id="avatar">--</div>
+    <h2>Mon profil</h2>
+    <div id="info-rows">Chargement...</div>
+  </div>
+
+  <div class="profile-card">
+    <h2>Changer mon mot de passe</h2>
+    <div id="pwd-err" style="display:none;background:#fcebeb;color:#791f1f;font-size:12.5px;padding:9px 12px;border-radius:8px;margin-bottom:14px"></div>
+    <form id="pwd-form">
+      <div class="form-row full">
+        <div class="form-group">
+          <label class="form-label">Mot de passe actuel</label>
+          <input class="form-input" type="password" id="currentPassword" required autocomplete="current-password">
+        </div>
+      </div>
+      <div class="form-row full">
+        <div class="form-group">
+          <label class="form-label">Nouveau mot de passe (6 caractères min.)</label>
+          <input class="form-input" type="password" id="newPassword" required minlength="6" autocomplete="new-password">
+        </div>
+      </div>
+      <div class="form-row full">
+        <div class="form-group">
+          <label class="form-label">Confirmer le nouveau mot de passe</label>
+          <input class="form-input" type="password" id="confirmPassword" required minlength="6" autocomplete="new-password">
+        </div>
+      </div>
+      <div class="modal-footer" style="justify-content:flex-start;padding-top:6px;border-top:none">
+        <button class="btn-save" type="submit" id="pwd-btn">Mettre à jour le mot de passe</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="toast-wrap" id="toasts"></div>
+
+<script>
+const API = 'http://localhost:3000/api';
+const authToken = sessionStorage.getItem('medibase_token');
+if (!authToken) window.location.href = 'login.html';
+
+const ROLE_LABELS = {
+  admin:'Administrateur', medecin:'Médecin', infirmier:'Infirmier(ère)',
+  pharmacien:'Pharmacien(ne)', technicien:'Technicien(ne)',
+  secretaire:'Secrétariat', caissier:'Facturation'
+};
+
+async function apiFetch(url, opts = {}) {
+  const headers = Object.assign({}, opts.headers, { Authorization: `Bearer ${authToken}` });
+  const r = await fetch(url, Object.assign({}, opts, { headers }));
+  if (r.status === 401) { window.location.href = 'login.html'; throw new Error('Session expirée'); }
+  return r;
+}
+
+function showToast(msg, type='ok') {
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  document.getElementById('toasts').appendChild(el);
+  setTimeout(() => el.remove(), 3500);
+}
+
+async function loadMe() {
+  try {
+    const r = await apiFetch(`${API}/me`);
+    const j = await r.json();
+    const u = j.user;
+    document.getElementById('avatar').textContent = (u.prenom[0] + u.nom[0]).toUpperCase();
+    document.getElementById('info-rows').innerHTML = `
+      <div class="info-row"><span>Nom complet</span><span>${u.prenom} ${u.nom}</span></div>
+      <div class="info-row"><span>Email</span><span>${u.email}</span></div>
+      <div class="info-row"><span>Rôle</span><span>${ROLE_LABELS[u.role] || u.role}</span></div>
+      <div class="info-row"><span>Statut</span><span>${u.actif ? 'Actif' : 'Désactivé'}</span></div>
+      <div class="info-row"><span>Compte créé le</span><span>${new Date(u.cree_le).toLocaleDateString('fr-FR')}</span></div>
+    `;
+  } catch(e) {
+    document.getElementById('info-rows').textContent = 'Impossible de charger le profil.';
+  }
+}
+
+document.getElementById('pwd-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const err = document.getElementById('pwd-err');
+  const btn = document.getElementById('pwd-btn');
+  err.style.display = 'none';
+
+  const currentPassword = document.getElementById('currentPassword').value;
+  const newPassword     = document.getElementById('newPassword').value;
+  const confirmPassword = document.getElementById('confirmPassword').value;
+
+  if (newPassword !== confirmPassword) {
+    err.textContent = 'Les deux nouveaux mots de passe ne correspondent pas.';
+    err.style.display = 'block';
+    return;
+  }
+
+  btn.disabled = true; btn.textContent = 'Mise à jour...';
+  try {
+    const r = await apiFetch(`${API}/me/password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentPassword, newPassword })
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'Erreur');
+    showToast('Mot de passe mis à jour ✓', 'ok');
+    document.getElementById('pwd-form').reset();
+  } catch(e2) {
+    err.textContent = e2.message;
+    err.style.display = 'block';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Mettre à jour le mot de passe';
+  }
+});
+
+function toggleTheme() {
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  if (isDark) { document.documentElement.removeAttribute('data-theme'); localStorage.setItem('medibase_theme','light'); }
+  else { document.documentElement.setAttribute('data-theme','dark'); localStorage.setItem('medibase_theme','dark'); }
+  syncThemeIcon();
+}
+function syncThemeIcon() {
+  const btn = document.getElementById('theme-toggle');
+  if (btn) btn.textContent = document.documentElement.getAttribute('data-theme') === 'dark' ? '☀️' : '🌙';
+}
+syncThemeIcon();
+loadMe();
+</script>
+
+</body>
+</html>
